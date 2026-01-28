@@ -84,8 +84,8 @@ class SessionDetailActivity : AppCompatActivity() {
                 estimatedCapacityText.text = "$it mAh"
             }
 
-            avgTemperatureText.text = "${String.format("%.1f", session.averageTemperature)}°C"
-            maxTemperatureText.text = "${String.format("%.1f", session.maxTemperature)}°C"
+            avgTemperatureText.text = "${String.format(Locale.getDefault(), "%.1f", session.averageTemperature)}°C"
+            tempMaxText.text = "${String.format(Locale.getDefault(), "%.1f", session.maxTemperature)}°C"
             avgVoltageText.text = "${session.averageVoltage} mV"
 
             session.chargerType?.let {
@@ -234,15 +234,15 @@ class SessionDetailActivity : AppCompatActivity() {
         binding.apply {
             // 온도 통계
             val temps = measurements.map { it.temperature }
-            tempMinText.text = "${String.format("%.1f", temps.minOrNull() ?: 0f)}°C"
-            tempMaxText.text = "${String.format("%.1f", temps.maxOrNull() ?: 0f)}°C"
-            tempAvgText.text = "${String.format("%.1f", temps.average())}°C"
+            tempMinText.text = "${String.format(Locale.getDefault(), "%.1f", temps.minOrNull() ?: 0f)}°C"
+            tempMaxText.text = "${String.format(Locale.getDefault(), "%.1f", temps.maxOrNull() ?: 0f)}°C"
+            avgTemperatureText.text = "${String.format(Locale.getDefault(), "%.1f", temps.average())}°C"
 
             // 전압 통계
             val voltages = measurements.map { it.voltage }
             voltageMinText.text = "${voltages.minOrNull() ?: 0} mV"
             voltageMaxText.text = "${voltages.maxOrNull() ?: 0} mV"
-            voltageAvgText.text = "${voltages.average().toInt()} mV"
+            avgVoltageText.text = "${voltages.average().toInt()} mV"
 
             // 측정 횟수
             measurementCountText.text = "${measurements.size}회"
