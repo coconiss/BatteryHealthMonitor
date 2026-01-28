@@ -73,9 +73,27 @@ class MainActivity : AppCompatActivity() {
         // 기기 스펙
         viewModel.deviceSpec.observe(this) { spec ->
             binding.deviceModelText.text = "${spec.manufacturer} ${spec.deviceModel}"
+
+            // 설계 용량 표시
             binding.designCapacityText.text = "${spec.designCapacity} mAh"
-            binding.specSourceText.text = "출처: ${translateSource(spec.source)}"
-            binding.specConfidenceText.text = "신뢰도: ${(spec.confidence * 100).toInt()}%"
+
+            // 출처 및 신뢰도
+            val sourceText = translateSource(spec.source)
+            binding.specSourceText.text = "출처: $sourceText"
+
+            val confidencePercent = (spec.confidence * 100).toInt()
+            binding.specConfidenceText.text = "신뢰도: $confidencePercent%"
+
+            // 신뢰도가 낮으면 경고 표시
+            if (spec.confidence < 0.7f) {
+                binding.specConfidenceText.setTextColor(
+                    ContextCompat.getColor(this, R.color.health_fair)
+                )
+            } else {
+                binding.specConfidenceText.setTextColor(
+                    ContextCompat.getColor(this, R.color.health_good)
+                )
+            }
         }
 
         // 현재 배터리 정보

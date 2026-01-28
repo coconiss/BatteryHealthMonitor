@@ -1,4 +1,4 @@
-// util/BatteryUtils.kt 수정 및 확장
+// util/BatteryUtils.kt 수정
 package com.batteryhealth.monitor.util
 
 import android.content.Context
@@ -22,33 +22,45 @@ object BatteryUtils {
     }
 
     /**
-     * 배터리 용량을 여러 방법으로 시도하여 가져옴
+     * 배터리 설계 용량을 여러 방법으로 시도하여 가져옴
+     * 설정 > 배터리에 표시되는 값과 동일해야 함
      */
     fun getBatteryCapacity(context: Context): Int? {
-        Timber.d("Attempting to get battery capacity...")
+        Timber.d("Attempting to get battery design capacity...")
 
-        // 방법 1: PowerProfile을 통한 배터리 용량 가져오기 (가장 정확)
-        getBatteryCapacityFromPowerProfile(context)?.let {
-            Timber.i("Battery capacity from PowerProfile: $it mAh")
-            return it
+        // 방법 1: PowerProfile을 통한 배터리 용량 가져오기
+        getBatteryCapacityFromPowerProfile(context)?.let { capacity ->
+            Timber.i("Battery capacity from PowerProfile: $capacity mAh")
+            // PowerProfile 값이 합리적인 범위인지 확인
+            if (capacity in 1000..10000) {
+                return capacity
+            } else {
+                Timber.w("PowerProfile returned unrealistic value: $capacity")
+            }
         }
 
-        // 방법 2: 시스템 프로퍼티에서 가져오기
-        getBatteryCapacityFromSystemProperty()?.let {
-            Timber.i("Battery capacity from system property: $it mAh")
-            return it
+        // 방법 2: 커널 파일 시스템에서 설계 용량 가져오기 (더 정확)
+        getBatteryCapacityFromKernel()?.let { capacity ->
+            Timber.i("Battery capacity from kernel: $capacity mAh")
+            if (capacity in 1000..10000) {
+                return capacity
+            }
         }
 
-        // 방법 3: 커널 파일 시스템에서 가져오기
-        getBatteryCapacityFromKernel()?.let {
-            Timber.i("Battery capacity from kernel: $it mAh")
-            return it
+        // 방법 3: 시스템 프로퍼티에서 가져오기
+        getBatteryCapacityFromSystemProperty()?.let { capacity ->
+            Timber.i("Battery capacity from system property: $capacity mAh")
+            if (capacity in 1000..10000) {
+                return capacity
+            }
         }
 
-        // 방법 4: Reflection을 통한 BatteryManager 메서드 호출
-        getBatteryCapacityFromBatteryManager(context)?.let {
-            Timber.i("Battery capacity from BatteryManager: $it mAh")
-            return it
+        // 방법 4: Reflection을 통한 다른 메서드 시도
+        getBatteryCapacityFromBatteryManager(context)?.let { capacity ->
+            Timber.i("Battery capacity from BatteryManager: $capacity mAh")
+            if (capacity in 1000..10000) {
+                return capacity
+            }
         }
 
         Timber.w("Failed to get battery capacity from all methods")
@@ -56,8 +68,7 @@ object BatteryUtils {
     }
 
     /**
-     * 방법 1: PowerProfile을 통해 배터리 용량 가져오기
-     * 설정 > 배터리 > 배터리 정보에 표시되는 값과 동일
+     * 방법 1: PowerProfile을 통해 배터리 설계 용량 가져오기
      */
     private fun getBatteryCapacityFromPowerProfile(context: Context): Int? {
         return try {
@@ -65,10 +76,16 @@ object BatteryUtils {
             val constructor = powerProfileClass.getConstructor(Context::class.java)
             val powerProfile = constructor.newInstance(context)
 
+            // getBatteryCapacity 메서드 호출
             val getBatteryCapacity = powerProfileClass.getMethod("getBatteryCapacity")
             val capacity = getBatteryCapacity.invoke(powerProfile) as Double
 
-            capacity.toInt()
+            Timber.d("PowerProfile raw value: $capacity")
+
+            // Double을 Int로 변환 (반올림)
+            val capacityInt = capacity.toInt()
+
+            capacityInt
         } catch (e: Exception) {
             Timber.e(e, "Failed to get battery capacity from PowerProfile")
             null
@@ -76,60 +93,43 @@ object BatteryUtils {
     }
 
     /**
-     * 방법 2: 시스템 프로퍼티에서 배터리 용량 가져오기
-     */
-    private fun getBatteryCapacityFromSystemProperty(): Int? {
-        val properties = listOf(
-            "ro.config.battery_capacity",
-            "persist.sys.battery.capacity",
-            "ro.bat.capacity"
-        )
-
-        for (property in properties) {
-            try {
-                val process = Runtime.getRuntime().exec("getprop $property")
-                val value = process.inputStream.bufferedReader().use { it.readText() }.trim()
-                process.waitFor()
-
-                value.toIntOrNull()?.let { capacity ->
-                    if (capacity > 0) {
-                        return capacity
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.v(e, "Failed to get property $property")
-            }
-        }
-
-        return null
-    }
-
-    /**
-     * 방법 3: 커널 파일 시스템에서 배터리 용량 가져오기
+     * 방법 2: 커널 파일 시스템에서 배터리 설계 용량 가져오기
+     * 이 방법이 가장 정확할 수 있음
      */
     private fun getBatteryCapacityFromKernel(): Int? {
         val paths = listOf(
+            // 설계 용량 (design capacity)
             "/sys/class/power_supply/battery/charge_full_design",
             "/sys/class/power_supply/battery/batt_full_design",
             "/sys/class/power_supply/bms/charge_full_design",
-            "/sys/class/power_supply/battery/charge_counter_shadow",
-            "/sys/class/power_supply/battery/fg_fullcapnom"
+            "/sys/class/power_supply/battery/charge_design",
+            // 일부 기기에서는 다른 경로 사용
+            "/sys/class/power_supply/battery/fg_fullcapnom",
+            "/sys/class/power_supply/bms/battery_capacity"
         )
 
         for (path in paths) {
             try {
                 val file = File(path)
                 if (file.exists() && file.canRead()) {
-                    val value = file.readText().trim().toLongOrNull()
+                    val content = file.readText().trim()
+                    Timber.d("Read from $path: $content")
+
+                    val value = content.toLongOrNull()
                     value?.let {
-                        // 값이 µAh 단위인 경우 mAh로 변환
-                        val capacity = if (it > 100000) {
-                            (it / 1000).toInt()
-                        } else {
-                            it.toInt()
+                        // 값의 단위 확인 및 변환
+                        val capacity = when {
+                            // µAh 단위 (1,000,000 이상)
+                            it > 1000000 -> (it / 1000).toInt()
+                            // 이미 mAh 단위 (1000-10000 범위)
+                            it in 1000..10000 -> it.toInt()
+                            // µAh 단위일 가능성 (100,000 이상)
+                            it > 100000 -> (it / 1000).toInt()
+                            else -> null
                         }
 
-                        if (capacity in 1000..10000) {
+                        if (capacity != null && capacity in 1000..10000) {
+                            Timber.i("Valid capacity from $path: $capacity mAh")
                             return capacity
                         }
                     }
@@ -143,20 +143,66 @@ object BatteryUtils {
     }
 
     /**
-     * 방법 4: BatteryManager의 숨겨진 메서드 사용
+     * 방법 3: 시스템 프로퍼티에서 배터리 용량 가져오기
+     */
+    private fun getBatteryCapacityFromSystemProperty(): Int? {
+        val properties = listOf(
+            "ro.config.battery_capacity",
+            "persist.sys.battery.capacity",
+            "ro.bat.capacity",
+            "persist.vendor.battery.capacity"
+        )
+
+        for (property in properties) {
+            try {
+                val process = Runtime.getRuntime().exec("getprop $property")
+                val value = process.inputStream.bufferedReader().use { it.readText() }.trim()
+                process.waitFor()
+
+                Timber.d("Property $property: $value")
+
+                value.toIntOrNull()?.let { capacity ->
+                    if (capacity in 1000..10000) {
+                        return capacity
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.v(e, "Failed to get property $property")
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * 방법 4: BatteryManager의 여러 메서드 시도
      */
     private fun getBatteryCapacityFromBatteryManager(context: Context): Int? {
         return try {
             val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-            val batteryManagerClass = batteryManager.javaClass
 
-            // computeChargeTimeRemaining 메서드가 있으면 내부적으로 용량 정보를 가지고 있음
-            val getCapacity = batteryManagerClass.getMethod("getIntProperty", Int::class.java)
+            // Android 9 이상에서 사용 가능한 메서드
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val chargeCounter = batteryManager.getLongProperty(
+                    BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER
+                )
+                val capacity = batteryManager.getIntProperty(
+                    BatteryManager.BATTERY_PROPERTY_CAPACITY
+                )
 
-            // BatteryManager.BATTERY_PROPERTY_CAPACITY (숨겨진 상수)
-            val capacity = getCapacity.invoke(batteryManager, 4) as Int
+                Timber.d("BatteryManager - ChargeCounter: $chargeCounter, Capacity: $capacity%")
 
-            if (capacity > 0) capacity else null
+                // CHARGE_COUNTER를 현재 퍼센트로 나누어 전체 용량 추정
+                if (chargeCounter > 0 && capacity > 0) {
+                    val estimatedTotal = (chargeCounter / 1000.0 / capacity * 100).toInt()
+                    if (estimatedTotal in 1000..10000) {
+                        Timber.i("Estimated capacity from BatteryManager: $estimatedTotal mAh")
+                        return estimatedTotal
+                    }
+                }
+            }
+
+            null
         } catch (e: Exception) {
             Timber.e(e, "Failed to get battery capacity from BatteryManager")
             null

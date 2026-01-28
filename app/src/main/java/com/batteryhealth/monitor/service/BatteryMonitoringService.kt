@@ -50,6 +50,8 @@ class BatteryMonitoringService : Service() {
 
     // 세션 시작 시간 추적
     private var sessionStartTime: Long = 0L
+    // 마지막으로 측정된 배터리 퍼센트
+    private var lastPercentage: Int = 0
 
     private val handler = Handler(Looper.getMainLooper())
     private val monitoringRunnable = object : Runnable {
@@ -80,6 +82,12 @@ class BatteryMonitoringService : Service() {
     private fun startMonitoring() {
         Timber.i("Starting battery monitoring")
 
+        // 이미 모니터링 중이면 무시
+        if (currentSessionId != null) {
+            Timber.w("Already monitoring session: $currentSessionId")
+            return
+        }
+
         // Foreground 알림 표시
         startForeground(
             NotificationHelper.MONITORING_NOTIFICATION_ID,
@@ -87,13 +95,15 @@ class BatteryMonitoringService : Service() {
         )
 
         sessionStartTime = System.currentTimeMillis()
+        val startPercentage = getBatteryPercentage()
+        lastPercentage = startPercentage
 
         // 새 세션 생성
         serviceScope.launch {
             try {
                 val session = ChargingSession(
                     startTimestamp = sessionStartTime,
-                    startPercentage = getBatteryPercentage(),
+                    startPercentage = startPercentage,
                     startChargeCounter = getChargeCounter(),
                     averageTemperature = getTemperature(),
                     averageVoltage = getVoltage(),
@@ -103,7 +113,7 @@ class BatteryMonitoringService : Service() {
                 currentSessionId = sessionRepository.insertSession(session)
                 measurements.clear()
 
-                Timber.d("Created new session: $currentSessionId")
+                Timber.d("Created new session: $currentSessionId (Start: $startPercentage%)")
 
                 // 모니터링 시작
                 handler.post(monitoringRunnable)
@@ -126,6 +136,9 @@ class BatteryMonitoringService : Service() {
 
         Timber.v("Battery data: $percentage%, ${temperature}°C, ${voltage}mV")
 
+        // 퍼센트 업데이트
+        lastPercentage = percentage
+
         // 고온 체크
         if (temperature > MAX_SAFE_TEMPERATURE) {
             Timber.w("High temperature detected: ${temperature}°C")
@@ -146,18 +159,21 @@ class BatteryMonitoringService : Service() {
 
         measurements.add(measurement)
 
-        // DB에 저장 (배치)
-        if (measurements.size >= 10) {
+        // DB에 저장 (배치) - 즉시 저장으로 변경
+        if (measurements.size >= 5) { // 10에서 5로 변경하여 더 자주 저장
             serviceScope.launch {
                 sessionRepository.insertMeasurements(measurements.toList())
+                Timber.d("Saved ${measurements.size} measurements to DB")
                 measurements.clear()
             }
         }
 
         // 충전 완료 또는 중단 체크
-        if (!isCharging() || percentage == 100) {
-            Timber.i("Charging completed or stopped")
+        val isCurrentlyCharging = isCharging()
+        if (!isCurrentlyCharging || percentage == 100) {
+            Timber.i("Charging completed or stopped (Charging: $isCurrentlyCharging, Percentage: $percentage%)")
             finalizeSession()
+            return
         }
 
         // 알림 업데이트
@@ -169,20 +185,33 @@ class BatteryMonitoringService : Service() {
 
         Timber.i("Finalizing session: $sessionId")
 
+        // 즉시 모니터링 중지
         handler.removeCallbacks(monitoringRunnable)
 
         serviceScope.launch {
             try {
-                // 남은 측정값 저장
+                // 남은 측정값 모두 저장
                 if (measurements.isNotEmpty()) {
                     sessionRepository.insertMeasurements(measurements)
+                    Timber.d("Saved remaining ${measurements.size} measurements")
                 }
 
-                val session = sessionRepository.getSessionById(sessionId) ?: return@launch
+                // 세션 정보 가져오기
+                val session = sessionRepository.getSessionById(sessionId)
+                if (session == null) {
+                    Timber.e("Session not found: $sessionId")
+                    currentSessionId = null
+                    measurements.clear()
+                    stopSelf()
+                    return@launch
+                }
 
+                // 현재 배터리 상태 가져오기
                 val endChargeCounter = getChargeCounter()
                 val endPercentage = getBatteryPercentage()
                 val endTime = System.currentTimeMillis()
+
+                Timber.d("Session finalize - Start: ${session.startPercentage}%, End: $endPercentage%")
 
                 // 추정 용량 계산
                 val estimatedCapacity = healthCalculator.calculateEstimatedCapacity(
@@ -194,6 +223,7 @@ class BatteryMonitoringService : Service() {
 
                 // 모든 측정값 가져오기
                 val allMeasurements = sessionRepository.getMeasurementsBySession(sessionId)
+                Timber.d("Total measurements for session: ${allMeasurements.size}")
 
                 // 평균 및 최대값 계산
                 val avgTemp = if (allMeasurements.isNotEmpty()) {
@@ -214,7 +244,7 @@ class BatteryMonitoringService : Service() {
                     session.averageVoltage
                 }
 
-                // 세션 업데이트
+                // 세션 업데이트 - 중요: endTimestamp와 endPercentage 반드시 설정!
                 val updatedSession = session.copy(
                     endTimestamp = endTime,
                     endPercentage = endPercentage,
@@ -227,9 +257,14 @@ class BatteryMonitoringService : Service() {
 
                 sessionRepository.updateSession(updatedSession)
 
-                Timber.i("Session finalized. Duration: ${(endTime - sessionStartTime) / 1000}s, " +
-                        "Charge: ${session.startPercentage}% -> ${endPercentage}%, " +
-                        "Estimated capacity: $estimatedCapacity mAh")
+                val durationSeconds = (endTime - sessionStartTime) / 1000
+                val chargeChange = endPercentage - session.startPercentage
+
+                Timber.i("Session finalized successfully:")
+                Timber.i("  Duration: ${durationSeconds}s (${durationSeconds / 60} min)")
+                Timber.i("  Charge: ${session.startPercentage}% -> $endPercentage% (+$chargeChange%)")
+                Timber.i("  Estimated capacity: $estimatedCapacity mAh")
+                Timber.i("  Measurements: ${allMeasurements.size}")
 
                 // 완료 알림
                 notificationHelper.showSessionCompletedNotification(
@@ -242,6 +277,7 @@ class BatteryMonitoringService : Service() {
             } finally {
                 currentSessionId = null
                 measurements.clear()
+                lastPercentage = 0
                 stopSelf()
             }
         }
@@ -254,21 +290,27 @@ class BatteryMonitoringService : Service() {
             try {
                 val session = sessionRepository.getSessionById(sessionId) ?: return@launch
 
+                val endTime = System.currentTimeMillis()
+                val endPercentage = getBatteryPercentage()
+
                 val invalidSession = session.copy(
                     isValid = false,
                     invalidReason = reason,
-                    endTimestamp = System.currentTimeMillis()
+                    endTimestamp = endTime,
+                    endPercentage = endPercentage,
+                    endChargeCounter = getChargeCounter()
                 )
 
                 sessionRepository.updateSession(invalidSession)
 
-                Timber.w("Session marked invalid: $reason")
+                Timber.w("Session marked invalid: $reason (Start: ${session.startPercentage}%, End: $endPercentage%)")
 
             } catch (e: Exception) {
                 Timber.e(e, "Failed to mark session invalid")
             } finally {
                 currentSessionId = null
                 measurements.clear()
+                lastPercentage = 0
                 stopSelf()
             }
         }
@@ -281,10 +323,10 @@ class BatteryMonitoringService : Service() {
         // 진행 중인 세션이 있으면 종료
         if (currentSessionId != null) {
             finalizeSession()
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
-
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
     }
 
     private fun updateNotification(percentage: Int, temperature: Float) {
