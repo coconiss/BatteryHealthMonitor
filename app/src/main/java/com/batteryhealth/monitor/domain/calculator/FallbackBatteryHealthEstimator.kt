@@ -1,5 +1,12 @@
 package com.batteryhealth.monitor.domain.calculator
 
+import android.content.Context
+import com.batteryhealth.monitor.data.local.dao.ChargingSessionDao
+import com.batteryhealth.monitor.data.local.entity.ChargingSession
+import com.batteryhealth.monitor.domain.model.BatteryHealthResult
+import com.batteryhealth.monitor.domain.model.ConfidenceLevel
+import kotlinx.coroutines.flow.first
+
 // FallbackBatteryHealthEstimator.kt
 class FallbackBatteryHealthEstimator(
     private val context: Context,
@@ -11,7 +18,7 @@ class FallbackBatteryHealthEstimator(
      * (정확도 낮음, 참고용으로만 사용)
      */
     suspend fun estimateHealthByVoltageCurve(): BatteryHealthResult? {
-        val sessions = sessionDao.getAllSessions()
+        val sessions = sessionDao.getAllSessionsFlow().first()
 
         if (sessions.size < 5) {
             return null // 최소 5회 충전 데이터 필요
@@ -31,7 +38,7 @@ class FallbackBatteryHealthEstimator(
         val baselineRate = 0.05 // 신품 기준 전압 상승률 (가정)
 
         // 매우 대략적인 추정
-        val estimatedHealth = (baselineRate / averageRate * 100)
+        val estimatedHealth = (baselineRate / averageRate * 100).toFloat()
             .coerceIn(50f, 100f) // 50-100% 범위로 제한
 
         return BatteryHealthResult(
@@ -41,11 +48,13 @@ class FallbackBatteryHealthEstimator(
             confidenceLevel = ConfidenceLevel.VERY_LOW,
             validSessionsCount = earlyChargeVoltageRates.size,
             totalSessionsCount = sessions.size,
-            lastUpdated = System.currentTimeMillis()
+            lastUpdated = System.currentTimeMillis(),
+            deviceSpecSource = "fallback_voltage_curve",
+            deviceSpecConfidence = 0.1f
         )
     }
 
-    private fun analyzeEarlyChargeVoltageRate(session: ChargingSession): Float? {
+    private fun analyzeEarlyChargeVoltageRate(session: ChargingSession): Double? {
         // 실제 구현 필요: 20-30% 구간 전압 변화율 계산
         return null
     }

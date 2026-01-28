@@ -70,25 +70,21 @@ class MainActivity : AppCompatActivity() {
 
         // 기기 스펙
         viewModel.deviceSpec.observe(this) { spec ->
-            binding.deviceInfoCard.apply {
-                deviceModelText.text = "${spec.manufacturer} ${spec.deviceModel}"
-                designCapacityText.text = "${spec.designCapacity} mAh"
-                specSourceText.text = "출처: ${translateSource(spec.source)}"
-                specConfidenceText.text = "신뢰도: ${(spec.confidence * 100).toInt()}%"
-            }
+            binding.deviceModelText.text = "${spec.manufacturer} ${spec.deviceModel}"
+            binding.designCapacityText.text = "${spec.designCapacity} mAh"
+            binding.specSourceText.text = "출처: ${translateSource(spec.source)}"
+            binding.specConfidenceText.text = "신뢰도: ${(spec.confidence * 100).toInt()}%"
         }
 
         // 현재 배터리 정보
         viewModel.currentBatteryInfo.observe(this) { info ->
-            binding.currentBatteryCard.apply {
-                batteryPercentageText.text = "${info.percentage}%"
-                temperatureText.text = "${String.format("%.1f", info.temperature)}°C"
-                voltageText.text = "${info.voltage} mV"
-                chargingStatusText.text = if (info.isCharging) {
-                    "충전 중 (${info.chargerType})"
-                } else {
-                    "충전 안함"
-                }
+            binding.batteryPercentageText.text = "${info.percentage}%"
+            binding.temperatureText.text = "${String.format("%.1f", info.temperature)}°C"
+            binding.voltageText.text = "${info.voltage} mV"
+            binding.chargingStatusText.text = if (info.isCharging) {
+                "충전 중 (${info.chargerType})"
+            } else {
+                "충전 안함"
             }
         }
 
@@ -138,8 +134,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun displayHealthResult(result: com.batteryhealth.monitor.domain.model.BatteryHealthResult) {
-        binding.healthResultCard.apply {
-            visibility = android.view.View.VISIBLE
+        binding.apply {
+            healthResultCard.visibility = android.view.View.VISIBLE
+            insufficientDataCard.visibility = android.view.View.GONE
 
             // Health 퍼센트
             healthPercentageText.text = "${result.healthPercentage.toInt()}%"
