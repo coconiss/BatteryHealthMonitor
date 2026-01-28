@@ -88,7 +88,7 @@ class BatteryHealthCalculator @Inject constructor(
         val lowerBound = q1 - (1.5 * iqr)
         val upperBound = q3 + (1.5 * iqr)
 
-        val filtered = values.filter { it in lowerBound..upperBound }
+        val filtered = values.filter { (it.toDouble()) in lowerBound..upperBound }
 
         Timber.d("Outlier removal: ${values.size} -> ${filtered.size} values")
         Timber.d("Bounds: [$lowerBound, $upperBound], IQR: $iqr")

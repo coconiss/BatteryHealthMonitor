@@ -12,6 +12,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.pow
 
 @Singleton
 class DeviceBatterySpecRepository @Inject constructor(
