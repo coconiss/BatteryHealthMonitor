@@ -1,4 +1,3 @@
-// service/BatteryBroadcastReceiver.kt
 package com.batteryhealth.monitor.service
 
 import android.content.BroadcastReceiver
@@ -11,14 +10,23 @@ import timber.log.Timber
 class BatteryBroadcastReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        // 자동 모니터링 설정 확인
+        val prefs = context.getSharedPreferences("battery_health_prefs", Context.MODE_PRIVATE)
+        val autoMonitoring = prefs.getBoolean("auto_monitoring_enabled", true)
+
+        if (!autoMonitoring) {
+            Timber.d("Auto monitoring is disabled")
+            return
+        }
+
         when (intent.action) {
             Intent.ACTION_POWER_CONNECTED -> {
-                Timber.i("Power connected")
+                Timber.i("Power connected - starting monitoring")
                 startMonitoringService(context)
             }
 
             Intent.ACTION_POWER_DISCONNECTED -> {
-                Timber.i("Power disconnected")
+                Timber.i("Power disconnected - stopping monitoring")
                 stopMonitoringService(context)
             }
 

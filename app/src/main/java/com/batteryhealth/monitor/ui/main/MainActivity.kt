@@ -2,6 +2,7 @@
 package com.batteryhealth.monitor.ui.main
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -46,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         setupToolbar()
         setupObservers()
         setupClickListeners()
+        setupAutoMonitoringToggle()
         checkPermissions()
         checkChargeCounterSupport()
 
@@ -90,10 +92,8 @@ class MainActivity : AppCompatActivity() {
 
         // 모니터링 상태
         viewModel.isMonitoring.observe(this) { isMonitoring ->
-            binding.startMonitoringButton.apply {
-                text = if (isMonitoring) "모니터링 중..." else "충전 시작 시 자동 모니터링"
-                isEnabled = !isMonitoring
-            }
+            // 자동 모니터링이므로 UI 업데이트만 수행
+            Timber.d("Monitoring status: $isMonitoring")
         }
 
         // 로딩 상태
@@ -114,15 +114,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupClickListeners() {
-        binding.startMonitoringButton.setOnClickListener {
-            viewModel.startMonitoring()
-            Snackbar.make(
-                binding.root,
-                "충전을 시작하면 자동으로 데이터 수집이 시작됩니다",
-                Snackbar.LENGTH_LONG
-            ).show()
-        }
-
         binding.refreshButton.setOnClickListener {
             viewModel.loadBatteryHealth()
             viewModel.refreshCurrentBatteryInfo()
@@ -130,6 +121,32 @@ class MainActivity : AppCompatActivity() {
 
         binding.viewHistoryButton.setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
+        }
+    }
+
+    private fun setupAutoMonitoringToggle() {
+        val prefs = getSharedPreferences("battery_health_prefs", Context.MODE_PRIVATE)
+        val isAutoEnabled = prefs.getBoolean("auto_monitoring_enabled", true)
+
+        binding.autoMonitoringSwitch.isChecked = isAutoEnabled
+
+        binding.autoMonitoringSwitch.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("auto_monitoring_enabled", isChecked).apply()
+
+            val message = if (isChecked) {
+                "충전 시 자동으로 데이터를 수집합니다"
+            } else {
+                "자동 모니터링이 비활성화되었습니다"
+            }
+            Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+
+            // 현재 충전 중이고 자동 모니터링이 활성화되었다면 즉시 시작
+            if (isChecked) {
+                val batteryInfo = viewModel.currentBatteryInfo.value
+                if (batteryInfo?.isCharging == true) {
+                    viewModel.startMonitoring()
+                }
+            }
         }
     }
 
@@ -206,6 +223,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun translateSource(source: String): String {
         return when {
+            source.startsWith("power_profile") -> "시스템 (PowerProfile)"
             source.startsWith("embedded_database") -> "내장 데이터베이스"
             source.startsWith("online_api") -> "온라인 API"
             source.startsWith("crowdsourced") -> "크라우드소싱"
@@ -257,7 +275,7 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_settings -> {
-                // TODO: 설정 화면
+                showSettingsDialog()
                 true
             }
             R.id.action_about -> {
@@ -272,6 +290,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showSettingsDialog() {
+        val prefs = getSharedPreferences("battery_health_prefs", Context.MODE_PRIVATE)
+        val isAutoEnabled = prefs.getBoolean("auto_monitoring_enabled", true)
+
+        AlertDialog.Builder(this)
+            .setTitle("설정")
+            .setSingleChoiceItems(
+                arrayOf("자동 모니터링 활성화"),
+                if (isAutoEnabled) 0 else -1
+            ) { dialog, which ->
+                val newState = which == 0
+                prefs.edit().putBoolean("auto_monitoring_enabled", newState).apply()
+                binding.autoMonitoringSwitch.isChecked = newState
+
+                val message = if (newState) {
+                    "자동 모니터링이 활성화되었습니다"
+                } else {
+                    "자동 모니터링이 비활성화되었습니다"
+                }
+                Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton("취소") { dialog, _ -> dialog.dismiss() }
+            .show()
+    }
+
     private fun showAboutDialog() {
         AlertDialog.Builder(this)
             .setTitle("앱 정보")
@@ -280,6 +324,12 @@ class MainActivity : AppCompatActivity() {
                 버전 1.0.0
                 
                 이 앱은 충전 데이터를 분석하여 배터리의 건강 상태를 추정합니다.
+                
+                주요 기능:
+                • 자동 배터리 모니터링
+                • 충전 기록 추적
+                • 배터리 건강도 계산
+                • 상세 충전 통계
                 
                 ⚠️ 주의: 제공되는 수치는 추정값이며 공식 측정값이 아닙니다.
             """.trimIndent())
@@ -299,5 +349,17 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("취소") { dialog, _ -> dialog.dismiss() }
             .show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 화면이 다시 보일 때 배터리 정보 갱신
+        viewModel.refreshCurrentBatteryInfo()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // ViewModel에서 실시간 업데이트 중지
+        viewModel.stopRealTimeUpdates()
     }
 }

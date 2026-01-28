@@ -9,9 +9,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Android 12+ 배터리 최적화 예외 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- 부팅 시 자동 시작 권한 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".BatteryHealthApplication"
@@ -43,6 +44,7 @@
             android:parentActivityName=".ui.main.MainActivity"
             android:screenOrientation="portrait" />
 
+        <!-- Session Detail Activity -->
         <activity
             android:name=".ui.history.SessionDetailActivity"
             android:parentActivityName=".ui.history.HistoryActivity"
@@ -59,15 +61,16 @@
                 android:value="Battery health monitoring" />
         </service>
 
-        <!-- Broadcast Receiver -->
+        <!-- Boot Completed Receiver -->
         <receiver
-            android:name=".service.BatteryBroadcastReceiver"
+            android:name=".service.BootCompletedReceiver"
             android:enabled="true"
-            android:exported="false">
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
             <intent-filter>
-                <action android:name="android.intent.action.BATTERY_CHANGED" />
-                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
-                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>
 
