@@ -1,4 +1,3 @@
-<!-- AndroidManifest.xml -->
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -42,6 +41,11 @@
         <activity
             android:name=".ui.history.HistoryActivity"
             android:parentActivityName=".ui.main.MainActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.history.SessionDetailActivity"
+            android:parentActivityName=".ui.history.HistoryActivity"
             android:screenOrientation="portrait" />
 
         <!-- Foreground Service -->

@@ -1,6 +1,6 @@
-// ui/history/HistoryActivity.kt
 package com.batteryhealth.monitor.ui.history
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.MenuItem
 import androidx.activity.viewModels
@@ -35,7 +35,14 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        adapter = ChargingSessionAdapter()
+        adapter = ChargingSessionAdapter { session ->
+            // 클릭 이벤트: 상세 화면으로 이동
+            val intent = Intent(this, SessionDetailActivity::class.java).apply {
+                putExtra(SessionDetailActivity.EXTRA_SESSION_ID, session.id)
+            }
+            startActivity(intent)
+        }
+
         binding.sessionsRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@HistoryActivity)
             adapter = this@HistoryActivity.adapter

@@ -1,4 +1,4 @@
-// ui/main/MainViewModel.kt
+// ui/main/MainViewModel.kt 수정
 package com.batteryhealth.monitor.ui.main
 
 import android.app.Application
@@ -15,6 +15,7 @@ import com.batteryhealth.monitor.domain.usecase.StartMonitoringUseCase
 import com.batteryhealth.monitor.util.BatteryInfo
 import com.batteryhealth.monitor.util.BatteryUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -46,9 +47,30 @@ class MainViewModel @Inject constructor(
     private val _errorMessage = MutableLiveData<String?>()
     val errorMessage: LiveData<String?> = _errorMessage
 
+    // 실시간 업데이트 활성화 여부
+    private var isRealTimeUpdateActive = false
+
     init {
         refreshCurrentBatteryInfo()
         checkOngoingSession()
+        startRealTimeUpdates()
+    }
+
+    /**
+     * 3초마다 배터리 정보 자동 갱신
+     */
+    private fun startRealTimeUpdates() {
+        isRealTimeUpdateActive = true
+        viewModelScope.launch {
+            while (isRealTimeUpdateActive) {
+                refreshCurrentBatteryInfo()
+                delay(3000) // 3초 간격
+            }
+        }
+    }
+
+    fun stopRealTimeUpdates() {
+        isRealTimeUpdateActive = false
     }
 
     fun loadBatteryHealth() {
@@ -121,5 +143,10 @@ class MainViewModel @Inject constructor(
                 Timber.e(e, "Failed to check ongoing session")
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopRealTimeUpdates()
     }
 }

@@ -1,4 +1,3 @@
-// ui/history/ChargingSessionAdapter.kt
 package com.batteryhealth.monitor.ui.history
 
 import android.view.LayoutInflater
@@ -15,7 +14,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-class ChargingSessionAdapter : ListAdapter<ChargingSession, ChargingSessionAdapter.ViewHolder>(DiffCallback()) {
+class ChargingSessionAdapter(
+    private val onItemClick: (ChargingSession) -> Unit
+) : ListAdapter<ChargingSession, ChargingSessionAdapter.ViewHolder>(DiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemChargingSessionBinding.inflate(
@@ -23,7 +24,7 @@ class ChargingSessionAdapter : ListAdapter<ChargingSession, ChargingSessionAdapt
             parent,
             false
         )
-        return ViewHolder(binding)
+        return ViewHolder(binding, onItemClick)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -31,12 +32,17 @@ class ChargingSessionAdapter : ListAdapter<ChargingSession, ChargingSessionAdapt
     }
 
     class ViewHolder(
-        private val binding: ItemChargingSessionBinding
+        private val binding: ItemChargingSessionBinding,
+        private val onItemClick: (ChargingSession) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private val dateFormat = SimpleDateFormat("yyyy년 M월 d일 HH:mm", Locale.KOREAN)
 
         fun bind(session: ChargingSession) {
+            binding.root.setOnClickListener {
+                onItemClick(session)
+            }
+
             binding.apply {
                 // 날짜
                 dateText.text = dateFormat.format(Date(session.startTimestamp))

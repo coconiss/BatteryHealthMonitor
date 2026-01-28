@@ -17,5 +17,15 @@
         <!-- Status Bar -->
         <item name="android:statusBarColor">@color/primary_dark</item>
         <item name="android:windowLightStatusBar">false</item>
+
+        <!-- 추가: 메뉴 텍스트 색상 -->
+        <item name="android:textColorPrimaryInverse">@color/white</item>
+        <item name="android:textColorSecondaryInverse">@color/white</item>
+    </style>
+
+    <!-- 추가: 메뉴 오버플로우 스타일 -->
+    <style name="OverflowMenuStyle" parent="Widget.AppCompat.PopupMenu.Overflow">
+        <item name="android:popupBackground">@color/white</item>
+        <item name="android:textColor">@color/text_primary</item>
     </style>
 </resources>

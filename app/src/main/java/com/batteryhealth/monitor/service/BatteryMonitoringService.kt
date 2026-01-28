@@ -1,4 +1,4 @@
-// service/BatteryMonitoringService.kt
+// service/BatteryMonitoringService.kt 수정
 package com.batteryhealth.monitor.service
 
 import android.app.*
@@ -48,6 +48,9 @@ class BatteryMonitoringService : Service() {
     private var currentSessionId: Long? = null
     private val measurements = mutableListOf<BatteryMeasurement>()
 
+    // 세션 시작 시간 추적
+    private var sessionStartTime: Long = 0L
+
     private val handler = Handler(Looper.getMainLooper())
     private val monitoringRunnable = object : Runnable {
         override fun run() {
@@ -83,11 +86,13 @@ class BatteryMonitoringService : Service() {
             notificationHelper.createMonitoringNotification()
         )
 
+        sessionStartTime = System.currentTimeMillis()
+
         // 새 세션 생성
         serviceScope.launch {
             try {
                 val session = ChargingSession(
-                    startTimestamp = System.currentTimeMillis(),
+                    startTimestamp = sessionStartTime,
                     startPercentage = getBatteryPercentage(),
                     startChargeCounter = getChargeCounter(),
                     averageTemperature = getTemperature(),
@@ -177,6 +182,7 @@ class BatteryMonitoringService : Service() {
 
                 val endChargeCounter = getChargeCounter()
                 val endPercentage = getBatteryPercentage()
+                val endTime = System.currentTimeMillis()
 
                 // 추정 용량 계산
                 val estimatedCapacity = healthCalculator.calculateEstimatedCapacity(
@@ -186,20 +192,44 @@ class BatteryMonitoringService : Service() {
                     endPercentage = endPercentage
                 )
 
+                // 모든 측정값 가져오기
+                val allMeasurements = sessionRepository.getMeasurementsBySession(sessionId)
+
+                // 평균 및 최대값 계산
+                val avgTemp = if (allMeasurements.isNotEmpty()) {
+                    allMeasurements.map { it.temperature }.average().toFloat()
+                } else {
+                    session.averageTemperature
+                }
+
+                val maxTemp = if (allMeasurements.isNotEmpty()) {
+                    allMeasurements.maxOfOrNull { it.temperature } ?: session.averageTemperature
+                } else {
+                    session.averageTemperature
+                }
+
+                val avgVoltage = if (allMeasurements.isNotEmpty()) {
+                    allMeasurements.map { it.voltage }.average().toInt()
+                } else {
+                    session.averageVoltage
+                }
+
                 // 세션 업데이트
                 val updatedSession = session.copy(
-                    endTimestamp = System.currentTimeMillis(),
+                    endTimestamp = endTime,
                     endPercentage = endPercentage,
                     endChargeCounter = endChargeCounter,
                     estimatedCapacity = estimatedCapacity,
-                    averageTemperature = measurements.map { it.temperature }.average().toFloat(),
-                    maxTemperature = measurements.maxOfOrNull { it.temperature } ?: 0f,
-                    averageVoltage = measurements.map { it.voltage }.average().toInt()
+                    averageTemperature = avgTemp,
+                    maxTemperature = maxTemp,
+                    averageVoltage = avgVoltage
                 )
 
                 sessionRepository.updateSession(updatedSession)
 
-                Timber.i("Session finalized. Estimated capacity: $estimatedCapacity mAh")
+                Timber.i("Session finalized. Duration: ${(endTime - sessionStartTime) / 1000}s, " +
+                        "Charge: ${session.startPercentage}% -> ${endPercentage}%, " +
+                        "Estimated capacity: $estimatedCapacity mAh")
 
                 // 완료 알림
                 notificationHelper.showSessionCompletedNotification(
@@ -210,6 +240,8 @@ class BatteryMonitoringService : Service() {
             } catch (e: Exception) {
                 Timber.e(e, "Failed to finalize session")
             } finally {
+                currentSessionId = null
+                measurements.clear()
                 stopSelf()
             }
         }
@@ -235,6 +267,8 @@ class BatteryMonitoringService : Service() {
             } catch (e: Exception) {
                 Timber.e(e, "Failed to mark session invalid")
             } finally {
+                currentSessionId = null
+                measurements.clear()
                 stopSelf()
             }
         }
@@ -243,6 +277,12 @@ class BatteryMonitoringService : Service() {
     private fun stopMonitoring() {
         Timber.i("Stopping battery monitoring")
         handler.removeCallbacks(monitoringRunnable)
+
+        // 진행 중인 세션이 있으면 종료
+        if (currentSessionId != null) {
+            finalizeSession()
+        }
+
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
