@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="database" path="battery_health_db"/>
+    <include domain="sharedpref" path="battery_health_prefs.xml"/>
+    <exclude domain="database" path="battery_health_db-wal"/>
+    <exclude domain="database" path="battery_health_db-shm"/>
+</full-backup-content>

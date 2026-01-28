@@ -1,0 +1,103 @@
+// assets/device_battery_specs.json
+{
+  "version": "1.0.0",
+  "last_updated": "2026-01-28",
+  "devices": [
+    {
+      "name": "Samsung Galaxy S24 Ultra",
+      "models": ["SM-S928", "SM-S928B", "SM-S928U", "SM-S928N"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy S24+",
+      "models": ["SM-S926", "SM-S926B", "SM-S926U", "SM-S926N"],
+      "capacity": 4900,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy S24",
+      "models": ["SM-S921", "SM-S921B", "SM-S921U", "SM-S921N"],
+      "capacity": 4000,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy S23 Ultra",
+      "models": ["SM-S918", "SM-S918B", "SM-S918U", "SM-S918N"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy S23+",
+      "models": ["SM-S916", "SM-S916B", "SM-S916U", "SM-S916N"],
+      "capacity": 4700,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy S23",
+      "models": ["SM-S911", "SM-S911B", "SM-S911U", "SM-S911N"],
+      "capacity": 3900,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy A54",
+      "models": ["SM-A546", "SM-A546B", "SM-A546E"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Samsung Galaxy A34",
+      "models": ["SM-A346", "SM-A346B", "SM-A346E"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Google Pixel 8 Pro",
+      "models": ["Pixel 8 Pro"],
+      "capacity": 5050,
+      "verified": true
+    },
+    {
+      "name": "Google Pixel 8",
+      "models": ["Pixel 8"],
+      "capacity": 4575,
+      "verified": true
+    },
+    {
+      "name": "Google Pixel 7 Pro",
+      "models": ["Pixel 7 Pro"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Google Pixel 7",
+      "models": ["Pixel 7"],
+      "capacity": 4355,
+      "verified": true
+    },
+    {
+      "name": "OnePlus 12",
+      "models": ["CPH2573", "CPH2581"],
+      "capacity": 5400,
+      "verified": true
+    },
+    {
+      "name": "OnePlus 11",
+      "models": ["CPH2449", "CPH2451"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Xiaomi 14 Ultra",
+      "models": ["2405CPX3DG", "23127PN0CG"],
+      "capacity": 5000,
+      "verified": true
+    },
+    {
+      "name": "Xiaomi 14",
+      "models": ["2309FPN6DG", "23127PN0DA"],
+      "capacity": 4610,
+      "verified": true
+    }
+  ]
+}

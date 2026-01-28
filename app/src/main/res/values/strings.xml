@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">배터리 Health</string>
+
+    <!-- Main Screen -->
+    <string name="battery_health">배터리 Health</string>
+    <string name="current_battery_status">현재 배터리 상태</string>
+    <string name="device_info">기기 정보</string>
+    <string name="start_monitoring">충전 시작 시 자동 모니터링</string>
+    <string name="view_history">충전 기록 보기</string>
+    <string name="refresh">새로고침</string>
+
+    <!-- Battery Health Status -->
+    <string name="health_excellent">배터리 상태가 매우 좋습니다</string>
+    <string name="health_good">배터리 상태가 양호합니다</string>
+    <string name="health_fair">배터리 노화가 진행 중입니다</string>
+    <string name="health_poor">배터리 교체를 고려하세요</string>
+    <string name="health_critical">배터리 교체가 권장됩니다</string>
+
+    <!-- Info Labels -->
+    <string name="battery">배터리</string>
+    <string name="temperature">온도</string>
+    <string name="voltage">전압</string>
+    <string name="charging_status">충전 상태</string>
+    <string name="model">모델</string>
+    <string name="design_capacity">설계 용량</string>
+    <string name="spec_source">스펙 출처</string>
+    <string name="spec_confidence">스펙 신뢰도</string>
+    <string name="estimated_capacity">추정 용량</string>
+    <string name="confidence_level">신뢰도</string>
+    <string name="measurement_count">측정 횟수</string>
+
+    <!-- Format Strings -->
+    <string name="capacity_format">%1$d / %2$d mAh</string>
+    <string name="session_count_format">%1$d / %2$d</string>
+    <string name="percentage_format">%d%%</string>
+    <string name="temperature_format">%.1f°C</string>
+    <string name="voltage_format">%d mV</string>
+
+    <!-- Charging Status -->
+    <string name="charging_ac">충전 중 (AC)</string>
+    <string name="charging_usb">충전 중 (USB)</string>
+    <string name="charging_wireless">충전 중 (무선)</string>
+    <string name="not_charging">충전 안함</string>
+
+    <!-- Confidence Levels -->
+    <string name="confidence_very_low">매우 낮음 (참고용)</string>
+    <string name="confidence_low">낮음</string>
+    <string name="confidence_medium">보통</string>
+    <string name="confidence_high">높음</string>
+    <string name="confidence_very_high">매우 높음</string>
+
+    <!-- Warnings -->
+    <string name="low_confidence_warning">신뢰도가 낮습니다. 더 많은 충전 데이터를 수집하세요.</string>
+    <string name="high_temperature_warning">배터리 온도가 높습니다. 충전을 중단하고 기기를 식혀주세요.</string>
+
+    <!-- Insufficient Data -->
+    <string name="insufficient_data_title">데이터 부족</string>
+    <string name="insufficient_data_message">배터리 Health를 계산하려면 최소 2회 이상의\n완전 충전 데이터가 필요합니다.</string>
+
+    <!-- History Screen -->
+    <string name="charging_history">충전 기록</string>
+    <string name="no_history_title">충전 기록 없음</string>
+    <string name="no_history_message">기기를 충전하면 자동으로\n데이터가 수집됩니다</string>
+    <string name="charging_amount">충전량</string>
+    <string name="average_temperature">평균 온도</string>
+    <string name="charger">충전기</string>
+    <string name="invalid_reason">무효: %s</string>
+
+    <!-- Menu -->
+    <string name="action_settings">설정</string>
+    <string name="action_about">앱 정보</string>
+    <string name="action_clear_data">데이터 삭제</string>
+
+    <!-- Dialogs -->
+    <string name="permission_required_title">권한 필요</string>
+    <string name="notification_permission_message">배터리 모니터링 알림을 표시하려면 알림 권한이 필요합니다.</string>
+
+    <string name="device_not_supported_title">기기 미지원</string>
+    <string name="charge_counter_not_supported">이 기기는 정밀 배터리 측정을 지원하지 않습니다.\n\n배터리 건강도를 계산하기 위한 하드웨어 기능(CHARGE_COUNTER)이 이 기기에서 제공되지 않습니다.\n\n대체 추정 방식을 사용할 수 있으나, 정확도가 매우 낮습니다.</string>
+
+    <string name="about_title">앱 정보</string>
+    <string name="about_message">배터리 Health 모니터\n버전 1.0.0\n\n이 앱은 충전 데이터를 분석하여 배터리의 건강 상태를 추정합니다.\n\n⚠️ 주의: 제공되는 수치는 추정값이며 공식 측정값이 아닙니다.</string>
+
+    <string name="clear_data_title">데이터 삭제</string>
+    <string name="clear_data_message">모든 충전 기록을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
+    <string name="delete">삭제</string>
+    <string name="cancel">취소</string>
+    <string name="ok">확인</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_monitoring_name">배터리 모니터링</string>
+    <string name="notification_channel_monitoring_desc">배터리 충전 중 데이터 수집</string>
+    <string name="notification_channel_completion_name">측정 완료</string>
+    <string name="notification_channel_completion_desc">충전 세션 완료 알림</string>
+
+    <string name="notification_monitoring_title">배터리 Health 측정 중</string>
+    <string name="notification_monitoring_text">배터리 데이터 수집 중…</string>
+    <string name="notification_monitoring_with_data">배터리: %1$d%% | 온도: %2$.1f°C</string>
+
+    <string name="notification_completed_title">충전 세션 완료</string>
+    <string name="notification_completed_text">충전 데이터가 수집되었습니다</string>
+    <string name="notification_completed_with_capacity">추정 용량: %d mAh</string>
+
+    <!-- Snackbar Messages -->
+    <string name="monitoring_started">충전을 시작하면 자동으로 데이터 수집이 시작됩니다</string>
+    <string name="data_cleared">모든 데이터가 삭제되었습니다</string>
+    <string name="calculation_failed">배터리 Health 계산 실패</string>
+    <string name="loading_failed">데이터 로드 실패</string>
+
+    <!-- Disclaimer -->
+    <string name="health_disclaimer">⚠️ 배터리 건강도는 추정값입니다\n\n• 이 값은 공식 측정값이 아닌 충전 데이터 기반 추정치입니다\n• 정확도는 기기 모델 및 충전 횟수에 따라 달라집니다\n• 최소 3회 이상의 완전 충전 후 신뢰도가 향상됩니다\n• 고온 환경(40°C 초과)에서의 충전 데이터는 제외됩니다\n• 급속 충전기 사용 시 측정 오차가 발생할 수 있습니다\n\n정확한 배터리 상태는 제조사 공식 서비스센터에서 확인하세요.</string>
+
+    <string name="privacy_notice">개인정보 처리 방침\n\n• 이 앱은 배터리 상태 정보만 수집합니다\n• 수집된 데이터는 기기 내부에만 저장됩니다\n• 외부 서버로 전송되는 데이터가 없습니다\n• 언제든지 앱 데이터를 삭제할 수 있습니다</string>
+</resources>
