@@ -409,6 +409,6 @@ class BatteryMonitoringService : Service() {
         const val ACTION_STOP_MONITORING = "STOP_MONITORING"
 
         private const val MONITORING_INTERVAL_MS = 30_000L // 30초
-        private const val MAX_SAFE_TEMPERATURE = 40f // 40°C
+        private const val MAX_SAFE_TEMPERATURE = 50f // 50°C
     }
 }
