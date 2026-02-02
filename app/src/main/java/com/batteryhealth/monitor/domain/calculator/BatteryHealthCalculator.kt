@@ -1,4 +1,4 @@
-// domain/calculator/BatteryHealthCalculator.kt
+// domain/calculator/BatteryHealthCalculator.kt (개선 버전)
 package com.batteryhealth.monitor.domain.calculator
 
 import com.batteryhealth.monitor.data.local.dao.ChargingSessionDao
@@ -33,15 +33,47 @@ class BatteryHealthCalculator @Inject constructor(
             return null
         }
 
-        // 아웃라이어 제거
-        val filteredCapacities = removeOutliers(capacities)
-        if (filteredCapacities.isEmpty()) {
-            Timber.w("All capacities were outliers")
+        // 충전 데이터와 방전 데이터 분리
+        val chargingSessions = validSessions.filter { it.chargerType != "DISCHARGE" }
+        val dischargingSessions = validSessions.filter { it.chargerType == "DISCHARGE" }
+
+        Timber.d("Charging sessions: ${chargingSessions.size}, Discharging sessions: ${dischargingSessions.size}")
+
+        // 충전 데이터 분석
+        val chargingCapacities = chargingSessions.mapNotNull { it.estimatedCapacity }
+        val filteredChargingCapacities = if (chargingCapacities.isNotEmpty()) {
+            removeOutliers(chargingCapacities)
+        } else {
+            emptyList()
+        }
+
+        // 방전 데이터 분석
+        val dischargingCapacities = dischargingSessions.mapNotNull { it.estimatedCapacity }
+        val filteredDischargingCapacities = if (dischargingCapacities.isNotEmpty()) {
+            removeOutliers(dischargingCapacities)
+        } else {
+            emptyList()
+        }
+
+        // 데이터 병합 (충전 데이터에 더 높은 가중치)
+        val weightedCapacities = mutableListOf<Int>()
+
+        // 충전 데이터: 가중치 2 (더 신뢰성 높음)
+        filteredChargingCapacities.forEach { capacity ->
+            weightedCapacities.add(capacity)
+            weightedCapacities.add(capacity)
+        }
+
+        // 방전 데이터: 가중치 1
+        weightedCapacities.addAll(filteredDischargingCapacities)
+
+        if (weightedCapacities.isEmpty()) {
+            Timber.w("All capacities were outliers or no valid data")
             return null
         }
 
         // 평균 추정 용량
-        val averageEstimatedCapacity = filteredCapacities.average().toInt()
+        val averageEstimatedCapacity = weightedCapacities.average().toInt()
 
         // Health % 계산
         val healthPercentage = (averageEstimatedCapacity.toFloat() /
@@ -50,20 +82,23 @@ class BatteryHealthCalculator @Inject constructor(
         // 100% 초과 방지 (센서 오차)
         val adjustedHealth = healthPercentage.coerceIn(0f, 105f)
 
-        // 신뢰도 평가
+        // 신뢰도 평가 (충전+방전 데이터 모두 고려)
+        val totalValidSamples = filteredChargingCapacities.size + filteredDischargingCapacities.size
         val confidence = evaluateConfidence(
-            validSessionsCount = filteredCapacities.size,
-            deviceSpecConfidence = deviceSpec.confidence
+            validSessionsCount = totalValidSamples,
+            deviceSpecConfidence = deviceSpec.confidence,
+            hasDischargeData = dischargingSessions.isNotEmpty()
         )
 
         Timber.d("Battery health: ${adjustedHealth}%, confidence: $confidence")
+        Timber.d("Based on ${filteredChargingCapacities.size} charging + ${filteredDischargingCapacities.size} discharging sessions")
 
         return BatteryHealthResult(
             healthPercentage = adjustedHealth,
             estimatedCurrentCapacity = averageEstimatedCapacity,
             designCapacity = deviceSpec.designCapacity,
             confidenceLevel = confidence,
-            validSessionsCount = filteredCapacities.size,
+            validSessionsCount = totalValidSamples,
             totalSessionsCount = totalSessions,
             lastUpdated = System.currentTimeMillis(),
             deviceSpecSource = deviceSpec.source,
@@ -97,18 +132,26 @@ class BatteryHealthCalculator @Inject constructor(
     }
 
     /**
-     * 신뢰도 평가
+     * 신뢰도 평가 (방전 데이터 고려)
      */
     private fun evaluateConfidence(
         validSessionsCount: Int,
-        deviceSpecConfidence: Float
+        deviceSpecConfidence: Float,
+        hasDischargeData: Boolean
     ): ConfidenceLevel {
         // 기기 스펙 신뢰도가 낮으면 전체 신뢰도 하락
         if (deviceSpecConfidence < 0.5f) {
             return ConfidenceLevel.VERY_LOW
         }
 
-        return when (validSessionsCount) {
+        // 방전 데이터가 있으면 신뢰도 +1 레벨 상승
+        val adjustedCount = if (hasDischargeData) {
+            validSessionsCount + 2 // 방전 데이터 보너스
+        } else {
+            validSessionsCount
+        }
+
+        return when (adjustedCount) {
             1 -> ConfidenceLevel.VERY_LOW
             2 -> ConfidenceLevel.LOW
             in 3..4 -> ConfidenceLevel.MEDIUM
@@ -131,13 +174,13 @@ class BatteryHealthCalculator @Inject constructor(
             return null
         }
 
-        val percentageChange = endPercentage - startPercentage
-        if (percentageChange < 10) {
-            Timber.w("Insufficient charge: ${percentageChange}%")
+        val percentageChange = abs(endPercentage - startPercentage)
+        if (percentageChange < 5) {
+            Timber.w("Insufficient change: ${percentageChange}%")
             return null
         }
 
-        val chargedMicroAh = endCounter - startCounter
+        val chargedMicroAh = abs(endCounter - startCounter)
         if (chargedMicroAh <= 0) {
             Timber.w("Invalid charge counter delta: $chargedMicroAh")
             return null
@@ -147,7 +190,13 @@ class BatteryHealthCalculator @Inject constructor(
         val estimatedCapacity = chargedMah / (percentageChange / 100.0)
 
         Timber.d("Estimated capacity: ${estimatedCapacity.toInt()} mAh " +
-                "(charged: ${chargedMah.toInt()} mAh, delta: ${percentageChange}%)")
+                "(changed: ${chargedMah.toInt()} mAh, delta: ${percentageChange}%)")
+
+        // 비현실적인 값 필터링
+        if (estimatedCapacity < 500 || estimatedCapacity > 20000) {
+            Timber.w("Unrealistic capacity estimate: ${estimatedCapacity.toInt()} mAh")
+            return null
+        }
 
         return estimatedCapacity.toInt()
     }

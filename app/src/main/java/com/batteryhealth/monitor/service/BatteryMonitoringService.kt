@@ -1,4 +1,4 @@
-// service/BatteryMonitoringService.kt 수정
+// service/BatteryMonitoringService.kt (개선 버전)
 package com.batteryhealth.monitor.service
 
 import android.app.*
@@ -16,6 +16,7 @@ import com.batteryhealth.monitor.data.local.entity.BatteryMeasurement
 import com.batteryhealth.monitor.data.local.entity.ChargingSession
 import com.batteryhealth.monitor.data.repository.ChargingSessionRepository
 import com.batteryhealth.monitor.domain.calculator.BatteryHealthCalculator
+import com.batteryhealth.monitor.domain.model.BatterySnapshot
 import com.batteryhealth.monitor.ui.main.MainActivity
 import com.batteryhealth.monitor.util.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
@@ -45,19 +46,33 @@ class BatteryMonitoringService : Service() {
         getSystemService(Context.BATTERY_SERVICE) as BatteryManager
     }
 
+    // 충전 모니터링 관련
     private var currentSessionId: Long? = null
-    private val measurements = mutableListOf<BatteryMeasurement>()
-
-    // 세션 시작 시간 추적
+    private val chargingMeasurements = mutableListOf<BatteryMeasurement>()
     private var sessionStartTime: Long = 0L
-    // 마지막으로 측정된 배터리 퍼센트
     private var lastPercentage: Int = 0
 
+    // 방전 모니터링 관련
+    private var isDischargeMonitoring = false
+    private val dischargeMeasurements = mutableListOf<BatteryMeasurement>()
+    private var lastDischargeSnapshot: BatterySnapshot? = null
+    private var dischargeStartSnapshot: BatterySnapshot? = null
+
     private val handler = Handler(Looper.getMainLooper())
-    private val monitoringRunnable = object : Runnable {
+
+    // 충전 모니터링 (30초 간격)
+    private val chargingMonitoringRunnable = object : Runnable {
         override fun run() {
-            collectBatteryData()
+            collectChargingData()
             handler.postDelayed(this, MONITORING_INTERVAL_MS)
+        }
+    }
+
+    // 방전 모니터링 (5분 간격)
+    private val dischargeMonitoringRunnable = object : Runnable {
+        override fun run() {
+            collectDischargeData()
+            handler.postDelayed(this, DISCHARGE_MONITORING_INTERVAL_MS)
         }
     }
 
@@ -72,23 +87,26 @@ class BatteryMonitoringService : Service() {
         Timber.d("onStartCommand: ${intent?.action}")
 
         when (intent?.action) {
-            ACTION_START_MONITORING -> startMonitoring()
-            ACTION_STOP_MONITORING -> stopMonitoring()
+            ACTION_START_MONITORING -> startChargingMonitoring()
+            ACTION_STOP_MONITORING -> stopChargingMonitoring()
+            ACTION_START_DISCHARGE_MONITORING -> startDischargeMonitoring()
+            ACTION_STOP_DISCHARGE_MONITORING -> stopDischargeMonitoring()
         }
 
         return START_STICKY
     }
 
-    private fun startMonitoring() {
-        Timber.i("Starting battery monitoring")
+    /**
+     * 충전 모니터링 시작
+     */
+    private fun startChargingMonitoring() {
+        Timber.i("Starting charging monitoring")
 
-        // 이미 모니터링 중이면 무시
         if (currentSessionId != null) {
-            Timber.w("Already monitoring session: $currentSessionId")
+            Timber.w("Already monitoring charging session: $currentSessionId")
             return
         }
 
-        // Foreground 알림 표시
         startForeground(
             NotificationHelper.MONITORING_NOTIFICATION_ID,
             notificationHelper.createMonitoringNotification()
@@ -98,7 +116,6 @@ class BatteryMonitoringService : Service() {
         val startPercentage = getBatteryPercentage()
         lastPercentage = startPercentage
 
-        // 새 세션 생성
         serviceScope.launch {
             try {
                 val session = ChargingSession(
@@ -111,21 +128,23 @@ class BatteryMonitoringService : Service() {
                 )
 
                 currentSessionId = sessionRepository.insertSession(session)
-                measurements.clear()
+                chargingMeasurements.clear()
 
-                Timber.d("Created new session: $currentSessionId (Start: $startPercentage%)")
+                Timber.d("Created charging session: $currentSessionId (Start: $startPercentage%)")
 
-                // 모니터링 시작
-                handler.post(monitoringRunnable)
+                handler.post(chargingMonitoringRunnable)
 
             } catch (e: Exception) {
-                Timber.e(e, "Failed to start monitoring")
+                Timber.e(e, "Failed to start charging monitoring")
                 stopSelf()
             }
         }
     }
 
-    private fun collectBatteryData() {
+    /**
+     * 충전 중 데이터 수집
+     */
+    private fun collectChargingData() {
         val sessionId = currentSessionId ?: return
 
         val chargeCounter = getChargeCounter()
@@ -134,19 +153,16 @@ class BatteryMonitoringService : Service() {
         val percentage = getBatteryPercentage()
         val current = getCurrent()
 
-        Timber.v("Battery data: $percentage%, ${temperature}°C, ${voltage}mV")
+        Timber.v("Charging data: $percentage%, ${temperature}°C, ${voltage}mV")
 
-        // 퍼센트 업데이트
         lastPercentage = percentage
 
-        // 고온 체크
         if (temperature > MAX_SAFE_TEMPERATURE) {
             Timber.w("High temperature detected: ${temperature}°C")
             markSessionInvalid("고온: ${temperature}°C")
             return
         }
 
-        // 측정값 저장
         val measurement = BatteryMeasurement(
             sessionId = sessionId,
             timestamp = System.currentTimeMillis(),
@@ -157,63 +173,56 @@ class BatteryMonitoringService : Service() {
             current = current
         )
 
-        measurements.add(measurement)
+        chargingMeasurements.add(measurement)
 
-        // DB에 저장 (배치) - 즉시 저장으로 변경
-        if (measurements.size >= 5) { // 10에서 5로 변경하여 더 자주 저장
+        if (chargingMeasurements.size >= 5) {
             serviceScope.launch {
-                sessionRepository.insertMeasurements(measurements.toList())
-                Timber.d("Saved ${measurements.size} measurements to DB")
-                measurements.clear()
+                sessionRepository.insertMeasurements(chargingMeasurements.toList())
+                Timber.d("Saved ${chargingMeasurements.size} measurements to DB")
+                chargingMeasurements.clear()
             }
         }
 
-        // 충전 완료 또는 중단 체크
         val isCurrentlyCharging = isCharging()
         if (!isCurrentlyCharging || percentage == 100) {
-            Timber.i("Charging completed or stopped (Charging: $isCurrentlyCharging, Percentage: $percentage%)")
-            finalizeSession()
+            Timber.i("Charging completed or stopped")
+            finalizeChargingSession()
             return
         }
 
-        // 알림 업데이트
         updateNotification(percentage, temperature)
     }
 
-    private fun finalizeSession() {
+    /**
+     * 충전 세션 종료
+     */
+    private fun finalizeChargingSession() {
         val sessionId = currentSessionId ?: return
 
-        Timber.i("Finalizing session: $sessionId")
+        Timber.i("Finalizing charging session: $sessionId")
 
-        // 즉시 모니터링 중지
-        handler.removeCallbacks(monitoringRunnable)
+        handler.removeCallbacks(chargingMonitoringRunnable)
 
         serviceScope.launch {
             try {
-                // 남은 측정값 모두 저장
-                if (measurements.isNotEmpty()) {
-                    sessionRepository.insertMeasurements(measurements)
-                    Timber.d("Saved remaining ${measurements.size} measurements")
+                if (chargingMeasurements.isNotEmpty()) {
+                    sessionRepository.insertMeasurements(chargingMeasurements)
+                    Timber.d("Saved remaining ${chargingMeasurements.size} measurements")
                 }
 
-                // 세션 정보 가져오기
                 val session = sessionRepository.getSessionById(sessionId)
                 if (session == null) {
                     Timber.e("Session not found: $sessionId")
                     currentSessionId = null
-                    measurements.clear()
+                    chargingMeasurements.clear()
                     stopSelf()
                     return@launch
                 }
 
-                // 현재 배터리 상태 가져오기
                 val endChargeCounter = getChargeCounter()
                 val endPercentage = getBatteryPercentage()
                 val endTime = System.currentTimeMillis()
 
-                Timber.d("Session finalize - Start: ${session.startPercentage}%, End: $endPercentage%")
-
-                // 추정 용량 계산
                 val estimatedCapacity = healthCalculator.calculateEstimatedCapacity(
                     startCounter = session.startChargeCounter,
                     endCounter = endChargeCounter,
@@ -221,11 +230,8 @@ class BatteryMonitoringService : Service() {
                     endPercentage = endPercentage
                 )
 
-                // 모든 측정값 가져오기
                 val allMeasurements = sessionRepository.getMeasurementsBySession(sessionId)
-                Timber.d("Total measurements for session: ${allMeasurements.size}")
 
-                // 평균 및 최대값 계산
                 val avgTemp = if (allMeasurements.isNotEmpty()) {
                     allMeasurements.map { it.temperature }.average().toFloat()
                 } else {
@@ -244,7 +250,6 @@ class BatteryMonitoringService : Service() {
                     session.averageVoltage
                 }
 
-                // 세션 업데이트 - 중요: endTimestamp와 endPercentage 반드시 설정!
                 val updatedSession = session.copy(
                     endTimestamp = endTime,
                     endPercentage = endPercentage,
@@ -257,29 +262,175 @@ class BatteryMonitoringService : Service() {
 
                 sessionRepository.updateSession(updatedSession)
 
-                val durationSeconds = (endTime - sessionStartTime) / 1000
-                val chargeChange = endPercentage - session.startPercentage
+                Timber.i("Charging session finalized: $estimatedCapacity mAh")
 
-                Timber.i("Session finalized successfully:")
-                Timber.i("  Duration: ${durationSeconds}s (${durationSeconds / 60} min)")
-                Timber.i("  Charge: ${session.startPercentage}% -> $endPercentage% (+$chargeChange%)")
-                Timber.i("  Estimated capacity: $estimatedCapacity mAh")
-                Timber.i("  Measurements: ${allMeasurements.size}")
-
-                // 완료 알림
                 notificationHelper.showSessionCompletedNotification(
                     sessionId = sessionId,
                     estimatedCapacity = estimatedCapacity
                 )
 
             } catch (e: Exception) {
-                Timber.e(e, "Failed to finalize session")
+                Timber.e(e, "Failed to finalize charging session")
             } finally {
                 currentSessionId = null
-                measurements.clear()
+                chargingMeasurements.clear()
                 lastPercentage = 0
                 stopSelf()
             }
+        }
+    }
+
+    /**
+     * 방전 모니터링 시작
+     */
+    private fun startDischargeMonitoring() {
+        Timber.i("Starting discharge monitoring")
+
+        if (isDischargeMonitoring) {
+            Timber.w("Already monitoring discharge")
+            return
+        }
+
+        // Foreground 알림 표시
+        startForeground(
+            NotificationHelper.DISCHARGE_MONITORING_NOTIFICATION_ID,
+            notificationHelper.createDischargeMonitoringNotification()
+        )
+
+        isDischargeMonitoring = true
+        dischargeMeasurements.clear()
+
+        // 초기 스냅샷 생성
+        dischargeStartSnapshot = createBatterySnapshot()
+        lastDischargeSnapshot = dischargeStartSnapshot
+
+        Timber.d("Discharge monitoring started at ${dischargeStartSnapshot?.percentage}%")
+
+        handler.post(dischargeMonitoringRunnable)
+    }
+
+    /**
+     * 방전 중 데이터 수집
+     */
+    private fun collectDischargeData() {
+        if (!isDischargeMonitoring) return
+
+        val currentSnapshot = createBatterySnapshot()
+
+        lastDischargeSnapshot?.let { lastSnapshot ->
+            val percentageDelta = lastSnapshot.percentageDelta(currentSnapshot)
+            val timeDeltaMinutes = lastSnapshot.timeDeltaSeconds(currentSnapshot) / 60
+
+            Timber.d("Discharge: -${percentageDelta}% in ${timeDeltaMinutes}min, " +
+                    "Current: ${currentSnapshot.percentage}%, Temp: ${currentSnapshot.temperature}°C")
+
+            // 배터리 건강도 추정에 사용할 데이터 저장
+            if (percentageDelta >= 5) { // 최소 5% 변화 시 기록
+                serviceScope.launch {
+                    saveDischargeDataPoint(lastSnapshot, currentSnapshot)
+                }
+            }
+        }
+
+        lastDischargeSnapshot = currentSnapshot
+
+        // 충전이 시작되면 방전 모니터링 중지
+        if (isCharging()) {
+            Timber.i("Charging started, stopping discharge monitoring")
+            stopDischargeMonitoring()
+        }
+
+        // 배터리가 너무 낮으면 중지 (10% 이하)
+        if (currentSnapshot.percentage <= 10) {
+            Timber.w("Battery too low (${currentSnapshot.percentage}%), stopping discharge monitoring")
+            stopDischargeMonitoring()
+        }
+
+        updateDischargeNotification(currentSnapshot.percentage, currentSnapshot.temperature)
+    }
+
+    /**
+     * 방전 데이터 포인트 저장
+     */
+    private suspend fun saveDischargeDataPoint(
+        startSnapshot: BatterySnapshot,
+        endSnapshot: BatterySnapshot
+    ) {
+        try {
+            // 방전 데이터를 별도 테이블에 저장하거나
+            // ChargingSession의 isValid=false로 저장 후 나중에 분석
+            val percentageDelta = startSnapshot.percentageDelta(endSnapshot)
+            val chargeCounterDelta = startSnapshot.chargeCounterDeltaMah(endSnapshot)
+
+            if (chargeCounterDelta != null && percentageDelta > 0) {
+                val estimatedCapacity = (chargeCounterDelta * 100) / percentageDelta
+
+                Timber.d("Discharge capacity estimate: $estimatedCapacity mAh " +
+                        "(based on ${percentageDelta}% discharge)")
+
+                // 방전 데이터를 특별한 세션으로 저장
+                val dischargeSession = ChargingSession(
+                    startTimestamp = startSnapshot.timestamp,
+                    endTimestamp = endSnapshot.timestamp,
+                    startPercentage = startSnapshot.percentage,
+                    endPercentage = endSnapshot.percentage,
+                    startChargeCounter = startSnapshot.chargeCounter,
+                    endChargeCounter = endSnapshot.chargeCounter,
+                    averageTemperature = (startSnapshot.temperature + endSnapshot.temperature) / 2,
+                    maxTemperature = maxOf(startSnapshot.temperature, endSnapshot.temperature),
+                    averageVoltage = (startSnapshot.voltage + endSnapshot.voltage) / 2,
+                    estimatedCapacity = estimatedCapacity,
+                    isValid = true,
+                    chargerType = "DISCHARGE", // 방전 데이터 표시
+                    chargingSpeed = null
+                )
+
+                sessionRepository.insertSession(dischargeSession)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to save discharge data point")
+        }
+    }
+
+    /**
+     * 방전 모니터링 중지
+     */
+    private fun stopDischargeMonitoring() {
+        Timber.i("Stopping discharge monitoring")
+
+        handler.removeCallbacks(dischargeMonitoringRunnable)
+        isDischargeMonitoring = false
+        dischargeMeasurements.clear()
+        lastDischargeSnapshot = null
+        dischargeStartSnapshot = null
+
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    /**
+     * 현재 배터리 상태 스냅샷 생성
+     */
+    private fun createBatterySnapshot(): BatterySnapshot {
+        return BatterySnapshot(
+            timestamp = System.currentTimeMillis(),
+            percentage = getBatteryPercentage(),
+            chargeCounter = getChargeCounter(),
+            temperature = getTemperature(),
+            voltage = getVoltage(),
+            current = getCurrent()
+        )
+    }
+
+    private fun stopChargingMonitoring() {
+        Timber.i("Stopping charging monitoring")
+        handler.removeCallbacks(chargingMonitoringRunnable)
+
+        if (currentSessionId != null) {
+            finalizeChargingSession()
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
 
@@ -290,42 +441,24 @@ class BatteryMonitoringService : Service() {
             try {
                 val session = sessionRepository.getSessionById(sessionId) ?: return@launch
 
-                val endTime = System.currentTimeMillis()
-                val endPercentage = getBatteryPercentage()
-
                 val invalidSession = session.copy(
                     isValid = false,
                     invalidReason = reason,
-                    endTimestamp = endTime,
-                    endPercentage = endPercentage,
+                    endTimestamp = System.currentTimeMillis(),
+                    endPercentage = getBatteryPercentage(),
                     endChargeCounter = getChargeCounter()
                 )
 
                 sessionRepository.updateSession(invalidSession)
-
-                Timber.w("Session marked invalid: $reason (Start: ${session.startPercentage}%, End: $endPercentage%)")
+                Timber.w("Session marked invalid: $reason")
 
             } catch (e: Exception) {
                 Timber.e(e, "Failed to mark session invalid")
             } finally {
                 currentSessionId = null
-                measurements.clear()
-                lastPercentage = 0
+                chargingMeasurements.clear()
                 stopSelf()
             }
-        }
-    }
-
-    private fun stopMonitoring() {
-        Timber.i("Stopping battery monitoring")
-        handler.removeCallbacks(monitoringRunnable)
-
-        // 진행 중인 세션이 있으면 종료
-        if (currentSessionId != null) {
-            finalizeSession()
-        } else {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
         }
     }
 
@@ -339,8 +472,17 @@ class BatteryMonitoringService : Service() {
         notificationManager.notify(NotificationHelper.MONITORING_NOTIFICATION_ID, notification)
     }
 
-    // Battery 정보 읽기 메서드들
+    private fun updateDischargeNotification(percentage: Int, temperature: Float) {
+        val notification = notificationHelper.createDischargeMonitoringNotification(
+            percentage = percentage,
+            temperature = temperature
+        )
 
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NotificationHelper.DISCHARGE_MONITORING_NOTIFICATION_ID, notification)
+    }
+
+    // Battery 정보 읽기 메서드들
     private fun getChargeCounter(): Long? {
         return try {
             batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
@@ -399,7 +541,8 @@ class BatteryMonitoringService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(monitoringRunnable)
+        handler.removeCallbacks(chargingMonitoringRunnable)
+        handler.removeCallbacks(dischargeMonitoringRunnable)
         serviceScope.cancel()
         Timber.d("BatteryMonitoringService destroyed")
     }
@@ -407,8 +550,11 @@ class BatteryMonitoringService : Service() {
     companion object {
         const val ACTION_START_MONITORING = "START_MONITORING"
         const val ACTION_STOP_MONITORING = "STOP_MONITORING"
+        const val ACTION_START_DISCHARGE_MONITORING = "START_DISCHARGE_MONITORING"
+        const val ACTION_STOP_DISCHARGE_MONITORING = "STOP_DISCHARGE_MONITORING"
 
-        private const val MONITORING_INTERVAL_MS = 30_000L // 30초
+        private const val MONITORING_INTERVAL_MS = 30_000L // 30초 (충전 시)
+        private const val DISCHARGE_MONITORING_INTERVAL_MS = 300_000L // 5분 (방전 시)
         private const val MAX_SAFE_TEMPERATURE = 50f // 50°C
     }
 }
