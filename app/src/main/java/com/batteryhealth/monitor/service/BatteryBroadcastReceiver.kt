@@ -10,6 +10,8 @@ import timber.log.Timber
 class BatteryBroadcastReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        Timber.d("BroadcastReceiver.onReceive: ${intent.action}")
+
         // 자동 모니터링 설정 확인
         val prefs = context.getSharedPreferences("battery_health_prefs", Context.MODE_PRIVATE)
         val autoMonitoring = prefs.getBoolean("auto_monitoring_enabled", true)
@@ -21,24 +23,16 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             Intent.ACTION_POWER_CONNECTED -> {
-                Timber.i("Power connected - starting monitoring")
+                Timber.i("🔌 Power connected - starting monitoring")
                 startMonitoringService(context)
             }
 
             Intent.ACTION_POWER_DISCONNECTED -> {
-                Timber.i("Power disconnected - stopping monitoring")
+                Timber.i("🔌 Power disconnected - stopping monitoring")
                 stopMonitoringService(context)
             }
 
-            Intent.ACTION_BATTERY_CHANGED -> {
-                val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-                val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                        status == BatteryManager.BATTERY_STATUS_FULL
-
-                if (!isCharging) {
-                    stopMonitoringService(context)
-                }
-            }
+            // ACTION_BATTERY_CHANGED 제거 - Service에서 직접 관리하여 중복 방지
         }
     }
 
